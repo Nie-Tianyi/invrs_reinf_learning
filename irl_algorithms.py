@@ -421,6 +421,289 @@ def visualize_reward_comparison(
     plt.show()
 
 
+# ===================== 最大熵IRL算法（Student3任务） =====================
+
+def compute_expert_feature_expectations_from_trajectories(
+    env,
+    trajectories: List[Dict],
+    gamma: float = 0.99,
+) -> np.ndarray:
+    """
+    从专家轨迹计算特征期望
+    :param env: AdvancedGridWorld环境
+    :param trajectories: 轨迹列表，每个轨迹包含states, actions, rewards等
+    :param gamma: 折扣因子
+    :return: 特征期望向量 (n_features,)
+    """
+    n_features = env.feature_matrix.shape[1]
+    mu_expert = np.zeros(n_features)
+    total_weight = 0.0
+    
+    for traj in trajectories:
+        states = traj["states"]
+        discount = 1.0
+        for state in states:
+            # 获取状态特征
+            state_idx = env._state_to_idx(state)
+            features = env.feature_matrix[state_idx]
+            mu_expert += discount * features
+            total_weight += discount
+            discount *= gamma
+    
+    if total_weight > 0:
+        mu_expert /= total_weight
+    return mu_expert
+
+
+def soft_value_iteration(
+    env,
+    reward_weights: np.ndarray,
+    gamma: float = 0.99,
+    temperature: float = 1.0,
+    max_iter: int = 1000,
+    tol: float = 1e-6,
+) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    Soft值迭代算法（最大熵IRL核心）
+    计算给定奖励权重下的soft Q值和soft value函数
+    
+    :param env: AdvancedGridWorld环境
+    :param reward_weights: 奖励权重向量 (n_features,)
+    :param gamma: 折扣因子
+    :param temperature: 温度参数（控制随机性）
+    :param max_iter: 最大迭代次数
+    :param tol: 收敛容忍度
+    :return: soft Q值矩阵 (n_states, n_actions), soft value函数 (n_states,)
+    """
+    n_states = env.n_states
+    n_actions = env.n_actions
+    
+    # 计算状态奖励：r(s) = w^T φ(s)
+    state_rewards = env.feature_matrix @ reward_weights  # (n_states,)
+    
+    # 初始化soft value函数
+    V = np.zeros(n_states)
+    
+    # Soft值迭代主循环
+    for i in range(max_iter):
+        V_old = V.copy()
+        
+        # 计算soft Q值
+        Q = np.zeros((n_states, n_actions))
+        for s in range(n_states):
+            for a in range(n_actions):
+                # 计算期望奖励：r(s) + γ * E[V(s')]
+                expected_next_v = np.sum(env.transition_matrix[s, a] * V)
+                Q[s, a] = state_rewards[s] + gamma * expected_next_v
+        
+        # 更新soft value函数：V(s) = temperature * logsumexp(Q(s, a)/temperature)
+        # 使用logsumexp数值稳定版本
+        for s in range(n_states):
+            if temperature > 0:
+                # 当temperature>0时，使用softmax
+                q_values = Q[s] / temperature
+                max_q = np.max(q_values)
+                # 数值稳定的logsumexp
+                log_sum_exp = max_q + np.log(np.sum(np.exp(q_values - max_q)))
+                V[s] = temperature * log_sum_exp
+            else:
+                # temperature=0时退化为max
+                V[s] = np.max(Q[s])
+        
+        # 检查收敛
+        if np.max(np.abs(V - V_old)) < tol:
+            break
+    
+    # 重新计算最终的Q值（使用收敛的V）
+    Q_final = np.zeros((n_states, n_actions))
+    for s in range(n_states):
+        for a in range(n_actions):
+            expected_next_v = np.sum(env.transition_matrix[s, a] * V)
+            Q_final[s, a] = state_rewards[s] + gamma * expected_next_v
+    
+    return Q_final, V
+
+
+def compute_soft_policy(
+    Q: np.ndarray,
+    temperature: float = 1.0,
+) -> np.ndarray:
+    """
+    从soft Q值计算softmax策略
+    :param Q: soft Q值矩阵 (n_states, n_actions)
+    :param temperature: 温度参数
+    :return: 策略矩阵 (n_states, n_actions)
+    """
+    n_states, n_actions = Q.shape
+    policy = np.zeros((n_states, n_actions))
+    
+    for s in range(n_states):
+        if temperature > 0:
+            # softmax策略
+            q_values = Q[s] / temperature
+            max_q = np.max(q_values)
+            exp_q = np.exp(q_values - max_q)  # 数值稳定
+            policy[s] = exp_q / np.sum(exp_q)
+        else:
+            # 确定性策略（贪婪）
+            best_action = np.argmax(Q[s])
+            policy[s, best_action] = 1.0
+    
+    return policy
+
+
+def compute_state_visitation_frequency_maxent(
+    env,
+    policy: np.ndarray,
+    gamma: float = 0.99,
+    initial_dist: Optional[np.ndarray] = None,
+    max_iter: int = 1000,
+    tol: float = 1e-6,
+) -> np.ndarray:
+    """
+    通过反向传播计算状态访问频率（最大熵IRL专用）
+    :param env: AdvancedGridWorld环境
+    :param policy: 策略矩阵 (n_states, n_actions)
+    :param gamma: 折扣因子
+    :param initial_dist: 初始状态分布
+    :param max_iter: 最大迭代次数
+    :param tol: 收敛容忍度
+    :return: 状态访问频率 (n_states,)
+    """
+    n_states = env.n_states
+    n_actions = env.n_actions
+    
+    # 初始状态分布
+    if initial_dist is None:
+        D = np.zeros(n_states)
+        D[env._state_to_idx(env.start_state)] = 1.0
+    else:
+        D = initial_dist.copy()
+    
+    # 构建策略转移矩阵
+    P_pi = np.zeros((n_states, n_states))
+    for s in range(n_states):
+        for a in range(n_actions):
+            prob = policy[s, a]
+            if prob > 0:
+                P_pi[s] += prob * env.transition_matrix[s, a]
+    
+    # 反向传播计算状态访问频率
+    # 求解线性方程：D = μ0 + γ * P_pi^T * D
+    # 等价于：(I - γ * P_pi^T) * D = μ0
+    I = np.eye(n_states)
+    A = I - gamma * P_pi.T
+    b = D.copy()  # 初始分布
+    
+    try:
+        D_final = np.linalg.solve(A, b)
+    except np.linalg.LinAlgError:
+        # 如果矩阵奇异，使用迭代法
+        D_final = D.copy()
+        for i in range(max_iter):
+            D_new = b + gamma * P_pi.T @ D_final
+            if np.max(np.abs(D_new - D_final)) < tol:
+                break
+            D_final = D_new
+    
+    return D_final
+
+
+def compute_policy_feature_expectations_maxent(
+    env,
+    policy: np.ndarray,
+    gamma: float = 0.99,
+    initial_dist: Optional[np.ndarray] = None,
+) -> np.ndarray:
+    """
+    计算策略的特征期望（最大熵IRL专用）
+    :param env: AdvancedGridWorld环境
+    :param policy: 策略矩阵 (n_states, n_actions)
+    :param gamma: 折扣因子
+    :param initial_dist: 初始状态分布
+    :return: 特征期望向量 (n_features,)
+    """
+    # 计算状态访问频率
+    D = compute_state_visitation_frequency_maxent(env, policy, gamma, initial_dist)
+    
+    # 特征期望: μ = D^T * Φ
+    mu = D @ env.feature_matrix
+    return mu
+
+
+def maximum_entropy_irl(
+    env,
+    expert_trajectories: List[Dict],
+    gamma: float = 0.99,
+    temperature: float = 1.0,
+    learning_rate: float = 0.1,
+    n_iterations: int = 100,
+    reg_coeff: float = 0.01,
+    verbose: bool = True,
+) -> Tuple[np.ndarray, np.ndarray, List[float]]:
+    """
+    最大熵IRL主算法（Ziebart et al., 2008）
+    
+    :param env: AdvancedGridWorld环境
+    :param expert_trajectories: 专家轨迹列表
+    :param gamma: 折扣因子
+    :param temperature: 温度参数
+    :param learning_rate: 学习率
+    :param n_iterations: 迭代次数
+    :param reg_coeff: 正则化系数（L2正则化）
+    :param verbose: 是否打印训练信息
+    :return: 奖励权重, 恢复的奖励矩阵, 损失历史
+    """
+    n_features = env.feature_matrix.shape[1]
+    
+    # 1. 计算专家特征期望
+    mu_expert = compute_expert_feature_expectations_from_trajectories(
+        env, expert_trajectories, gamma
+    )
+    
+    if verbose:
+        print(f"专家特征期望: {mu_expert}")
+        print(f"特征维度: {n_features}")
+    
+    # 2. 初始化权重
+    weights = np.zeros(n_features)
+    
+    # 3. 训练循环
+    losses = []
+    
+    for iteration in range(n_iterations):
+        # 3.1 计算当前奖励权重下的soft Q值和策略
+        Q, V = soft_value_iteration(
+            env, weights, gamma, temperature
+        )
+        policy = compute_soft_policy(Q, temperature)
+        
+        # 3.2 计算当前策略的特征期望
+        mu_policy = compute_policy_feature_expectations_maxent(
+            env, policy, gamma
+        )
+        
+        # 3.3 计算梯度：∇L = μ_expert - μ_policy + λ * w
+        gradient = mu_expert - mu_policy + reg_coeff * weights
+        
+        # 3.4 更新权重
+        weights += learning_rate * gradient
+        
+        # 3.5 计算损失
+        loss = 0.5 * np.sum((mu_expert - mu_policy) ** 2) + 0.5 * reg_coeff * np.sum(weights ** 2)
+        losses.append(loss)
+        
+        if verbose and (iteration % 10 == 0 or iteration == n_iterations - 1):
+            grad_norm = np.linalg.norm(gradient)
+            print(f"Iteration {iteration:3d}: loss={loss:.6f}, grad_norm={grad_norm:.6f}")
+    
+    # 4. 计算恢复的奖励矩阵
+    reward_matrix = env.feature_matrix @ weights
+    reward_matrix = reward_matrix.reshape((env.grid_size, env.grid_size))
+    
+    return weights, reward_matrix, losses
+
+
 if __name__ == "__main__":
     # 示例用法
     from environment import AdvancedGridWorld, value_iteration
@@ -489,3 +772,54 @@ if __name__ == "__main__":
         )
     except Exception as e:
         print(f"最大间隔IRL失败: {e}")
+    
+    # 测试最大熵IRL
+    print("\n--- 最大熵IRL (Maximum Entropy IRL) ---")
+    try:
+        # 生成专家轨迹数据（最大熵IRL需要轨迹而非完整策略）
+        print("生成专家轨迹数据...")
+        expert_trajectories = env.generate_expert_dataset(
+            expert_policy=expert_policy,
+            n_trajectories=50,  # 使用50条轨迹
+            noise_level=0.0,
+        )
+        print(f"生成轨迹数量: {len(expert_trajectories)}")
+        
+        # 运行最大熵IRL
+        weights_me, reward_me, losses = maximum_entropy_irl(
+            env,
+            expert_trajectories,
+            gamma=0.99,
+            temperature=1.0,
+            learning_rate=0.1,
+            n_iterations=50,  # 减少迭代次数以加快测试
+            reg_coeff=0.01,
+            verbose=True,
+        )
+        print(f"恢复的权重: {weights_me}")
+        
+        # 评估恢复效果
+        true_reward = env.get_true_reward()
+        metrics = evaluate_reward_recovery(env, reward_me, true_reward)
+        print(f"恢复指标: MSE={metrics['mse']:.4f}, MAE={metrics['mae']:.4f}, "
+              f"相关性={metrics['correlation']:.4f}")
+        
+        # 可视化对比
+        visualize_reward_comparison(
+            env, true_reward, reward_me, "Maximum Entropy IRL Recovery"
+        )
+        
+        # 绘制损失曲线
+        import matplotlib.pyplot as plt
+        plt.figure(figsize=(10, 6))
+        plt.plot(losses)
+        plt.xlabel("Iteration")
+        plt.ylabel("Loss")
+        plt.title("Maximum Entropy IRL Training Loss")
+        plt.grid(True, alpha=0.3)
+        plt.show()
+        
+    except Exception as e:
+        print(f"最大熵IRL失败: {e}")
+        import traceback
+        traceback.print_exc()
