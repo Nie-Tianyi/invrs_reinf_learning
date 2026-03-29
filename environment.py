@@ -1,3 +1,63 @@
+"""
+环境类：AdvancedGridWorld
+
+=============================================
+               游戏规则说明
+=============================================
+
+【核心目标】
+1. 玩家从起点 (S) 出发，需要到达终点 (G)
+2. 每走一步都会获得奖励/惩罚，目标是最大化累计奖励
+
+【网格世界】
+1. N×N 网格（默认10×10）
+2. 坐标系统：(x,y)，x是行索引（0在最上），y是列索引（0在最左）
+
+【地形类型】
+1. 普通地面（TERRAIN_NORMAL=0）：-1点/步
+2. 障碍物（TERRAIN_OBSTACLE=1）：不可通过，只能停留在原地
+3. 泥潭（TERRAIN_MUD=2）：-5点/步（高惩罚区）
+4. 草地（TERRAIN_GRASS=3）：0点/步（低惩罚区）
+5. 终点（TERRAIN_GOAL=4）：+100点（游戏结束）
+
+【动作空间】
+0 = 上（↑）：(x-1, y)
+1 = 下（↓）：(x+1, y)
+2 = 左（←）：(x, y-1)
+3 = 右（→）：(x, y+1)
+
+【转移概率】
+1. 目标动作执行概率：1 - transition_noise（默认0.8）
+2. 随机噪声概率：transition_noise（默认0.2）
+3. 噪声方向：与目标动作垂直的两个方向平分噪声概率
+4. 遇到边界或障碍物：停留在原地
+
+【奖励系统】
+1. 立即奖励：取决于下一状态的地形类型
+2. 到达终点：游戏结束，获得终点奖励
+3. 每步惩罚：鼓励智能体尽快到达终点
+
+【终止条件】
+1. 到达终点（goal_state）
+2. 超过最大步数（默认100步）
+
+【特征表示】（用于IRL）
+1. 地形类型指示特征（goal/obstacle/mud/grass）
+2. 距离特征：到终点的归一化曼哈顿距离
+3. 障碍物距离特征：到最近障碍物的归一化距离
+
+【关键接口】
+1. reset(): 重置环境到起点
+2. step(action): 执行动作，返回(next_state, reward, done, info)
+3. generate_trajectory(policy): 根据策略生成轨迹
+4. 其他IRL专用接口详见类方法
+
+【默认配置】
+grid_size=10, transition_noise=0.2, obstacle_ratio=0.15,
+mud_ratio=0.10, grass_ratio=0.10, max_steps=100
+"""
+
+
 import numpy as np
 import matplotlib.pyplot as plt
 from typing import Dict, List, Tuple, Optional
