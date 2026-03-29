@@ -43,13 +43,15 @@ class AdvancedGridWorld:
         self.TERRAIN_GRASS = 3  # 草地（低惩罚）
         self.TERRAIN_GOAL = 4  # 终点（终止态）
 
-        # 4. 初始化地图、终点、起点
-        self.grid = self._generate_grid()
+        # 4. 初始化起点、终点（必须在 _generate_grid 之前，因为地图生成需要用到）
         self.start_state = (0, 0)  # 默认起点
         self.goal_state = (self.grid_size - 1, self.grid_size - 1)  # 默认终点
+
+        # 5. 生成地图
+        self.grid = self._generate_grid()
         self.grid[self.goal_state] = self.TERRAIN_GOAL
 
-        # 5. 预计算核心矩阵（IRL算法必备）
+        # 6. 预计算核心矩阵（IRL算法必备）
         self.transition_matrix = (
             self._build_transition_matrix()
         )  # 转移概率矩阵 P[s][a][s']

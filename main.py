@@ -1,3 +1,6 @@
+from environment import AdvancedGridWorld, value_iteration
+import numpy as np
+
 def main():
     # 1. 初始化环境
     print("=== 初始化Advanced GridWorld环境 ===")
