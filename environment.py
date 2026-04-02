@@ -563,6 +563,87 @@ class AdvancedGridWorld:
             plt.savefig(save_path, dpi=300, bbox_inches="tight")
         plt.show()
 
+    # ===================== 深度特征支持接口 =====================
+    def get_local_grid(
+        self,
+        center: Tuple[int, int],
+        window_size: int = 5,
+        fill_value: int = 1
+    ) -> np.ndarray:
+        """
+        获取以center为中心的局部网格，用于深度特征提取
+        
+        :param center: 中心坐标 (x, y)
+        :param window_size: 窗口大小（奇数，如3,5,7）
+        :param fill_value: 边界填充值（默认1=障碍物）
+        :return: 局部网格，形状 (window_size, window_size)
+        """
+        if window_size % 2 == 0:
+            raise ValueError("window_size必须是奇数")
+        
+        half = window_size // 2
+        local_grid = np.full((window_size, window_size), fill_value, dtype=int)
+        
+        center_x, center_y = center
+        
+        for i in range(window_size):
+            for j in range(window_size):
+                map_x = center_x + i - half
+                map_y = center_y + j - half
+                
+                if 0 <= map_x < self.grid_size and 0 <= map_y < self.grid_size:
+                    local_grid[i, j] = self.grid[map_x, map_y]
+        
+        return local_grid
+    
+    def get_local_grid_one_hot(
+        self,
+        center: Tuple[int, int],
+        window_size: int = 5,
+        fill_value: int = 1
+    ) -> np.ndarray:
+        """
+        获取局部网格的one-hot编码版本
+        
+        :param center: 中心坐标 (x, y)
+        :param window_size: 窗口大小
+        :param fill_value: 边界填充值
+        :return: one-hot编码的局部网格，形状 (window_size, window_size, n_terrain_types)
+        """
+        local_grid = self.get_local_grid(center, window_size, fill_value)
+        n_terrain_types = 5  # 0-4: 普通, 障碍物, 泥潭, 草地, 终点
+        
+        # 创建one-hot编码
+        one_hot = np.zeros((window_size, window_size, n_terrain_types), dtype=np.float32)
+        for i in range(window_size):
+            for j in range(window_size):
+                terrain_type = local_grid[i, j]
+                if 0 <= terrain_type < n_terrain_types:
+                    one_hot[i, j, terrain_type] = 1.0
+        
+        return one_hot
+    
+    def get_deep_feature_representation(
+        self,
+        state: Tuple[int, int],
+        window_size: int = 5
+    ) -> Dict[str, np.ndarray]:
+        """
+        获取状态的深度特征表示（兼容接口）
+        
+        :param state: 状态坐标 (x, y)
+        :param window_size: 局部网格窗口大小
+        :return: 包含局部网格和one-hot编码的字典
+        """
+        local_grid = self.get_local_grid(state, window_size)
+        one_hot = self.get_local_grid_one_hot(state, window_size)
+        
+        return {
+            "local_grid": local_grid,
+            "one_hot": one_hot,
+            "coordinates": np.array([state[0], state[1]], dtype=np.float32)
+        }
+
     def plot_trajectory(
         self,
         trajectory: Dict,

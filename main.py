@@ -1,7 +1,11 @@
 from environment import AdvancedGridWorld, value_iteration
 import numpy as np
+import torch
 
 def main():
+    # 检查是否使用了CUDA
+    print(f"是否使用CUDA：{torch.cuda.is_available()}")
+
     # 1. 初始化环境
     print("=== 初始化Advanced GridWorld环境 ===")
     env = AdvancedGridWorld()
