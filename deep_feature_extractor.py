@@ -345,6 +345,3 @@ def test_deep_feature_extractor():
     
     print("测试完成!")
 
-
-if __name__ == "__main__":
-    test_deep_feature_extractor()

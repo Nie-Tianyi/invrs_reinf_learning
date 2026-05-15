@@ -678,6 +678,3 @@ def test_deep_maximum_entropy_irl():
     
     print("\n测试完成!")
 
-
-if __name__ == "__main__":
-    test_deep_maximum_entropy_irl()

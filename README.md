@@ -18,18 +18,40 @@ uv sync
 ```
 
 ### 运行演示
+
+项目提供了统一的命令行入口 `run.py`，所有实验均可通过子命令运行：
+
 ```bash
-# 线性特征IRL演示（线性规划、最大间隔）
-uv run python demo_irl.py
+# 基础IRL演示（线性规划 + 最大间隔 + 最大熵）
+uv run python run.py demo
 
-# 最大熵IRL演示（线性特征）
-uv run python demo_maxent_irl.py
+# 包含深度IRL对比的完整演示
+uv run python run.py demo --deep
 
-# 深度最大熵IRL演示（深度特征）
-uv run python demo_deep_irl.py
+# 综合对比实验
+uv run python run.py experiment
 
-# 性能测试
-uv run python performance_test.py
+# 快速实验（减少迭代次数，适合快速验证）
+uv run python run.py experiment --quick
+
+# 完整消融实验
+uv run python run.py ablation
+
+# 仅运行噪声维度的消融，3个随机种子
+uv run python run.py ablation --dim noise --runs 3
+
+# 从checkpoint生成图表
+uv run python run.py plot
+
+# 快速烟雾测试，验证所有模块是否正常
+uv run python run.py smoke
+```
+
+也可以单独运行各个演示脚本：
+```bash
+uv run python demo_irl.py          # 线性特征IRL演示
+uv run python demo_maxent_irl.py   # 最大熵IRL演示
+uv run python demo_deep_irl.py     # 深度IRL演示
 ```
 
 ## 📁 项目文件结构
@@ -39,16 +61,18 @@ invrs_reinf_learning/
 ├── README.md                          # 项目说明文件
 ├── pyproject.toml                     # 项目依赖配置
 ├── uv.lock                            # 依赖锁文件
+├── run.py                             # 统一命令行入口
 ├── environment.py                     # Advanced GridWorld 环境
 ├── irl_algorithms.py                  # 线性特征IRL算法
 ├── deep_feature_extractor.py          # 深度特征提取器（神经网络）
 ├── deep_irl_algorithms.py             # 深度最大熵IRL算法
+├── policy_training.py                 # 策略训练与评估
+├── experiments.py                     # 综合实验脚本
+├── experiments_final.py               # 消融实验脚本
+├── plot.py                            # 图表生成脚本
 ├── demo_irl.py                        # 线性特征IRL演示
 ├── demo_maxent_irl.py                 # 最大熵IRL演示
 ├── demo_deep_irl.py                   # 深度IRL演示
-├── performance_test.py                # 性能测试脚本
-├── experiments.py                     # 综合实验脚本
-├── policy_training.py                 # 策略训练与评估
 ├── main.py                            # 主入口脚本
 ├── IRL_IMPLEMENTATION.md              # IRL实现文档
 ├── STUDENT4_REPORT.md                 # 学生报告
@@ -167,13 +191,13 @@ dependencies = [
 
 ### 测试与验证
 ```bash
-# 运行所有演示
-uv run python demo_irl.py
-uv run python demo_maxent_irl.py  
-uv run python demo_deep_irl.py
+# 运行烟雾测试，验证所有模块正常
+uv run python run.py smoke
 
-# 运行性能测试
-uv run python performance_test.py
+# 也可以单独运行各个演示
+uv run python demo_irl.py
+uv run python demo_maxent_irl.py
+uv run python demo_deep_irl.py
 ```
 
 ## 📈 项目进展

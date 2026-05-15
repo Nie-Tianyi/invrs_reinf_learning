@@ -434,6 +434,3 @@ def visualize_comparison(results: Dict, env: AdvancedGridWorld):
     plt.tight_layout()
     plt.show()
 
-
-if __name__ == "__main__":
-    main()
