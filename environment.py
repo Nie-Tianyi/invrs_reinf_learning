@@ -651,7 +651,7 @@ class AdvancedGridWorld:
         save_path: Optional[str] = None,
     ):
         """可视化轨迹在网格中的路径"""
-        plt.figure(figsize=(8, 8))
+        plt.figure(figsize=(10, 8))
         # 绘制网格背景
         plt.imshow(self.grid, cmap="Set3", origin="upper", vmin=0, vmax=4)
         plt.title(title, fontsize=14)
@@ -700,7 +700,28 @@ class AdvancedGridWorld:
             markersize=4,
             label="Trajectory",
         )
-        plt.legend()
+
+        # 创建地形颜色图例（英文）
+        from matplotlib.patches import Patch
+        from matplotlib.lines import Line2D
+        cmap = plt.cm.Set3
+        terrain_labels = {
+            self.TERRAIN_NORMAL: "Normal Ground (-1)",
+            self.TERRAIN_OBSTACLE: "Obstacle (blocked)",
+            self.TERRAIN_MUD: "Mud (-5)",
+            self.TERRAIN_GRASS: "Grass (0)",
+            self.TERRAIN_GOAL: "Goal (+100)",
+        }
+        legend_elements = []
+        for terrain_value, label in terrain_labels.items():
+            color = cmap(terrain_value / 4.0)  # 归一化到[0,1]，因为vmax=4
+            legend_elements.append(Patch(facecolor=color, edgecolor='black', label=label))
+        
+        # 添加轨迹图例句柄
+        legend_elements.append(Line2D([0], [0], color='red', linewidth=2, marker='o', markersize=4, label='Trajectory Path'))
+        
+        # 显示综合图例
+        plt.legend(handles=legend_elements, loc='upper left', bbox_to_anchor=(1.05, 1))
 
         if save_path:
             plt.savefig(save_path, dpi=300, bbox_inches="tight")

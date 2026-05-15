@@ -544,7 +544,7 @@ def main():
     start_time = time.time()
     
     results = run_experiment(
-        env_config={"grid_size": 8, "seed": 42},
+        env_config={"grid_size": 20, "seed": 42},
         n_trajectories=50,
         noise_levels=[0.0, 0.1, 0.2, 0.3],
         gamma=0.99,
